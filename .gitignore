@@ -134,3 +134,6 @@ dmypy.json
 robusta_lib
 .idea
 .vscode
+
+
+generated/

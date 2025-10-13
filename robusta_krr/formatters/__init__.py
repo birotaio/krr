@@ -5,3 +5,4 @@ from .yaml import yaml
 from .csv import csv
 from .csv_raw import csv_raw
 from .html import html
+from .ready_to_deploy_yaml import ready_to_deploy

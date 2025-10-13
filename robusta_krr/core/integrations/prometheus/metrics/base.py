@@ -201,7 +201,16 @@ class PrometheusMetric(BaseMetric):
         if self.filtering:
             result = self.filter_prom_jobs_results(result)
 
-        return {pod_result["metric"]["pod"]: np.array(pod_result["values"], dtype=np.float64) for pod_result in result}
+        # Use the most specific label available as the key
+        # Priority: pod > container > node > first available label
+        return {
+            pod_result["metric"].get("pod") 
+            or pod_result["metric"].get("container") 
+            or pod_result["metric"].get("node")
+            or list(pod_result["metric"].values())[0] if pod_result["metric"] else "unknown": 
+            np.array(pod_result["values"], dtype=np.float64) 
+            for pod_result in result
+        }
 
     # --------------------- Filtering Jobs --------------------- #
 
