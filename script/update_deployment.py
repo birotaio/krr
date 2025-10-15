@@ -4,15 +4,15 @@ Script to update resource configurations in deployment config files
 based on a YAML file with resource recommendations.
 
 Usage:
-    ./update_deployment.py <yaml_file> <env_name> [--exclude service1,service2,...]
+    ./update_deployment.py <yaml_file> <env_name> [--include service1,service2,...]
     
 Arguments:
     yaml_file: Path to the YAML file containing resource configurations
     env_name: Target environment name (e.g., zoov-prod, zoov-staging, theta-prod)
-    --exclude: Comma-separated list of services to exclude (optional)
+    --include: Comma-separated list of services to include (optional, if not specified all services are included)
 
 Example:
-    ./update_deployment.py ../generated/prod.yaml zoov-prod --exclude event-data-transformer,gateway-wirma
+    ./update_deployment.py ../generated/prod.yaml zoov-prod --include event-data-transformer,gateway-wirma
 """
 
 import yaml
@@ -42,6 +42,41 @@ def load_staging_resources(yaml_file):
     except Exception as e:
         print(f"Error loading {yaml_file}: {e}")
         return {}
+
+def create_service_config(config_file, resources):
+    """Create a new service config file with the standard header and resources"""
+    try:
+        header = """#@ load("@ytt:data", "data")
+#@data/values
+---
+"""
+        base_indent = ''
+        resource_indent = '  '
+        value_indent = '    '
+        
+        lines = [header]
+        lines.append('resources:\n')
+        
+        # Add requests section
+        if 'requests' in resources:
+            lines.append(f"{resource_indent}requests:\n")
+            for key, value in resources['requests'].items():
+                lines.append(f"{value_indent}{key}: {value}\n")
+        
+        # Add limits section
+        if 'limits' in resources:
+            lines.append(f"{resource_indent}limits:\n")
+            for key, value in resources['limits'].items():
+                lines.append(f"{value_indent}{key}: {value}\n")
+        
+        # Write to file
+        with open(config_file, 'w') as f:
+            f.writelines(lines)
+        
+        return True
+    except Exception as e:
+        print(f"Error creating {config_file}: {e}")
+        return False
 
 def update_service_config(config_file, new_resources):
     """Update the resources section in a service config file while preserving formatting"""
@@ -125,13 +160,13 @@ def main():
         epilog="""
 Examples:
   %(prog)s ../generated/prod.yaml zoov-prod
-  %(prog)s prod.yaml zoov-staging --exclude event-data-transformer,gateway-wirma
-  %(prog)s ./generated/partners.yaml zoov-partners-prod
+  %(prog)s prod.yaml zoov-staging --include event-data-transformer,gateway-wirma
+  %(prog)s ./generated/partners.yaml zoov-partners-prod --include service1,service2
         """
     )
     parser.add_argument('yaml_file', help='Path to the YAML file containing resource configurations')
     parser.add_argument('env_name', help='Target environment name (e.g., zoov-prod, theta-prod)')
-    parser.add_argument('--exclude', help='Comma-separated list of services to exclude', default='')
+    parser.add_argument('--include', help='Comma-separated list of services to include (if not specified, all services are included)', default='')
     
     args = parser.parse_args()
     
@@ -139,10 +174,10 @@ Examples:
     yaml_file = Path(args.yaml_file)
     env_name = args.env_name
     
-    # Parse exclusion list
-    excluded_services = set()
-    if args.exclude:
-        excluded_services = set(s.strip() for s in args.exclude.split(',') if s.strip())
+    # Parse inclusion list
+    included_services = set()
+    if args.include:
+        included_services = set(s.strip() for s in args.include.split(',') if s.strip())
     
     # Resolve yaml file path (can be absolute or relative to script)
     if not yaml_file.is_absolute():
@@ -174,17 +209,19 @@ Examples:
     print(f"Found {len(staging_resources)} service configurations")
     print(f"Target environment: {env_name}")
     print(f"Target directory: {config_dir}")
-    if excluded_services:
-        print(f"Excluded services: {', '.join(sorted(excluded_services))}")
+    if included_services:
+        print(f"Included services (only these will be updated): {', '.join(sorted(included_services))}")
+    else:
+        print(f"No inclusion filter - all services will be updated")
     
     # Process each service
     updated_count = 0
     skipped_count = 0
     
     for service_name, resources in staging_resources.items():
-        # Check if service is in exclusion list
-        if service_name in excluded_services:
-            print(f"Skipping {service_name} (excluded)")
+        # Check if service is in inclusion list (if inclusion list is specified)
+        if included_services and service_name not in included_services:
+            # print(f"Skipping {service_name} (not in inclusion list)")
             skipped_count += 1
             continue
             
@@ -198,8 +235,12 @@ Examples:
             else:
                 print(f"  ✗ Failed to update {service_name}.yaml")
         else:
-            print(f"Skipping {service_name}.yaml (file not found in {env_name})")
-            skipped_count += 1
+            print(f"Creating {service_name}.yaml...")
+            if create_service_config(config_file, resources):
+                updated_count += 1
+                print(f"  ✓ Successfully created {service_name}.yaml")
+            else:
+                print(f"  ✗ Failed to create {service_name}.yaml")
     
     print(f"\nSummary:")
     print(f"  Updated: {updated_count} files")

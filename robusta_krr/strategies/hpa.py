@@ -13,107 +13,16 @@ import textwrap
 import numpy as np
 import pydantic as pd
 
-import robusta_krr
 from robusta_krr.api.models import K8sObjectData, MetricsPodData, PodsTimeData, ResourceRecommendation, ResourceType, RunResult
 from robusta_krr.api.strategies import BaseStrategy, StrategySettings
-from robusta_krr.core.integrations.prometheus.metrics.base import PrometheusMetric, QueryType
-from robusta_krr.core.models.objects import K8sObjectData as K8sObject
+from robusta_krr.core.models.objects import K8sObjectData
 
-
-# Custom metric loaders that aggregate across ALL pods (group by container only)
-class TotalCPULoader(PrometheusMetric):
-    """
-    A metric loader for loading TOTAL CPU usage across all pods.
-    Groups by container only to get aggregate usage.
-    """
-
-    query_type: QueryType = QueryType.QueryRange
-
-    def get_query(self, object: K8sObject, duration: str, step: str) -> str:
-        pods_selector = "|".join(pod.name for pod in object.pods)
-        cluster_label = self.get_prometheus_cluster_label()
-        return f"""
-            sum(
-                rate(
-                    container_cpu_usage_seconds_total{{
-                        namespace="{object.namespace}",
-                        pod=~"{pods_selector}",
-                        container="{object.container}"
-                        {cluster_label}
-                    }}[{step}]
-                )
-            ) by (container)
-        """
-
-
-class TotalMemoryLoader(PrometheusMetric):
-    """
-    A metric loader for loading TOTAL memory usage across all pods.
-    Groups by container only to get aggregate usage.
-    """
-
-    query_type: QueryType = QueryType.QueryRange
-
-    def get_query(self, object: K8sObject, duration: str, step: str) -> str:
-        pods_selector = "|".join(pod.name for pod in object.pods)
-        cluster_label = self.get_prometheus_cluster_label()
-        return f"""
-            sum(
-                container_memory_working_set_bytes{{
-                    namespace="{object.namespace}",
-                    pod=~"{pods_selector}",
-                    container="{object.container}"
-                    {cluster_label}
-                }}
-            ) by (container)
-        """
-
-
-class TotalCPUAmountLoader(PrometheusMetric):
-    """
-    A metric loader for loading CPU points count for total usage.
-    """
-
-    def get_query(self, object: K8sObject, duration: str, step: str) -> str:
-        pods_selector = "|".join(pod.name for pod in object.pods)
-        cluster_label = self.get_prometheus_cluster_label()
-        return f"""
-            count_over_time(
-                sum(
-                    container_cpu_usage_seconds_total{{
-                        namespace="{object.namespace}",
-                        pod=~"{pods_selector}",
-                        container="{object.container}"
-                        {cluster_label}
-                    }}
-                ) by (container)
-                [{duration}:{step}]
-            )
-        """
-
-
-class TotalMemoryAmountLoader(PrometheusMetric):
-    """
-    A metric loader for loading memory points count for total usage.
-    """
-
-    def get_query(self, object: K8sObject, duration: str, step: str) -> str:
-        pods_selector = "|".join(pod.name for pod in object.pods)
-        cluster_label = self.get_prometheus_cluster_label()
-        return f"""
-            count_over_time(
-                sum(
-                    container_memory_working_set_bytes{{
-                        namespace="{object.namespace}",
-                        pod=~"{pods_selector}",
-                        container="{object.container}"
-                        {cluster_label}
-                    }}
-                ) by (container)
-                [{duration}:{step}]
-            )
-        """
-
+from robusta_krr.core.integrations.prometheus.metrics import (
+  TotalCPULoader,
+  TotalCPUAmountLoader,
+  TotalMemoryLoader,
+  TotalMemoryAmountLoader,
+)
 
 class HPAStrategySettings(StrategySettings):
     """Settings for the HPA Optimized cost-saving strategy."""
